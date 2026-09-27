@@ -36,14 +36,14 @@ _RULES: list[tuple[str, float, re.Pattern]] = [
         r"^\s*(system|assistant)\s*:|\bsystem\s*:\s*you\b|###\s*(instruction|system|response)|```)", _I | re.M)),
     ("log_forgery", 0.6, re.compile(r"[\r\n]+\s*(<\d{1,3}>|[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2})")),
     ("control_chars", 0.4, re.compile(r"\x1b\[[0-9;]*[A-Za-z]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")),
-    ("zero_width", 0.35, re.compile(r"[​-‏ -‮⁠-⁤﻿]")),
+    ("zero_width", 0.35, re.compile(r"[\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]")),
     ("unicode_escapes", 0.3, re.compile(r"(\\u[0-9a-fA-F]{4}){6,}|(\\x[0-9a-fA-F]{2}){8,}")),
 ]
-_ZW = re.compile(r"[​-‏⁠-⁤﻿]")
+_ZW = re.compile(r"[\u200b-\u200f\u2060-\u2064\ufeff]")
 _B64 = re.compile(r"[A-Za-z0-9+/]{120,}={0,2}")
 # cheap pre-filter: any of these characters/words => run the full rule set
 _PRE = re.compile(r"ignore|disregard|classif|benign|authori|testing|move along|routine|you |assistant|system|"
-                  r"<\||\[INST|###|```|[\r\n\x1b​-‏⁠﻿]|\\u|[A-Za-z0-9+/]{120,}|scan|legit|"
+                  r"<\||\[INST|###|```|[\r\n\x1b\u200b-\u200f\u2060\ufeff]|\\u|[A-Za-z0-9+/]{120,}|scan|legit|"
                   r"false positive|all clear|nothing to see|ciso", _I)
 
 

@@ -52,7 +52,7 @@ WEIRD = [
     "", " ", "\t\t", "a", "=", '"', '""', 'k="unterminated', "x  y   z", "trailing   ",
     '{"a":"b\\"c","d":[1,2,{"e":null}]}', "fe80::1%eth0 10.0.0.1:443/tcp", "ümlaut ♥ 日本語 key=värde",
     "Sep  7 01:02:03 host prog[1]: msg", "a,,,,,,,,,,,,,b", '1,"quoted, comma",,x,,,,,,,,,,,z',
-    "\x1b[31mred\x1b[0m", "zero​width", "CEF:0|V|P|1|2|N|5|k=v\\=x",
+    "\x1b[31mred\x1b[0m", "zero\u200bwidth", "CEF:0|V|P|1|2|N|5|k=v\\=x",
 ]
 
 
