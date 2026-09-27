@@ -150,13 +150,19 @@ async def reset(parsers: bool = False):
 @app.get("/api/samples")
 async def samples():
     out = []
-    for sub in ("samples", "drift", "attack"):
+    for sub in ("samples", "drift", "attack", "uploads"):
         for p in sorted((SAMPLES / sub).glob("*")):
             with open(p, "rb") as f:
                 head = f.read(4096).decode("utf-8", "replace").split("\n")
             out.append({"name": p.name, "kind": sub, "path": f"{sub}/{p.name}", "bytes": p.stat().st_size,
                         "preview": [h for h in head if h and not h.startswith("#")][:3]})
     return out
+
+
+@app.get("/api/samples/lines")
+async def sample_lines(path: str, limit: int = 50):
+    data = _sample_path(path).read_bytes().decode("utf-8", "replace")
+    return [ln for ln in data.split("\n") if ln and not ln.startswith("#")][:min(limit, 500)]
 
 
 def _sample_path(rel: str) -> Path:
@@ -177,8 +183,14 @@ def _lines(data: bytes) -> list[str]:
 @app.post("/api/sources/onboard")
 async def onboard(file: UploadFile | None = File(None), source: str = Form(""), sample: str = Form(""),
                   vendor: str = Form("")):
+    sample_path = None
     if file is not None:
         data, name = await file.read(), file.filename or "upload.log"
+        safe = "".join(c for c in Path(name).name if c.isalnum() or c in "._-") or "upload.log"
+        up = SAMPLES / "uploads"
+        up.mkdir(exist_ok=True)
+        (up / safe).write_bytes(data)  # kept so the UI can stream it right after onboarding
+        sample_path = f"uploads/{safe}"
     elif sample:
         p = _sample_path(sample)
         data, name = p.read_bytes(), p.name
@@ -187,7 +199,7 @@ async def onboard(file: UploadFile | None = File(None), source: str = Form(""), 
     src = source or Path(name).stem
     job = S.foundry.new_job(src, name)
     asyncio.create_task(S.foundry.onboard(job, _lines(data), vendor))
-    return {"job_id": job.id, "source": src}
+    return {"job_id": job.id, "source": src, "sample_path": sample_path or sample}
 
 
 @app.get("/api/foundry/jobs")
@@ -511,3 +523,10 @@ async def ws_live(ws: WebSocket):
         pass
     finally:
         S.hub.disconnect(ws)
+
+
+# ------------------------------------------------------------------ static UI (single-port deployment)
+_UI = Path(os.environ.get("EKALOG_UI_DIR", Path(__file__).resolve().parent.parent.parent / "web" / "out"))
+if _UI.is_dir():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=_UI, html=True), name="ui")

@@ -5,12 +5,28 @@ can never produce SQL.
 """
 from __future__ import annotations
 
+import re
 import time
 
 from ..foundry.prompts import ASK_FIELDS, ASK_OPS
 from .store import EventStore, ip_in_cidr
 
 _NUMERIC = {"src_port", "dst_port", "severity_id", "class_uid", "bytes_out", "bytes_in"}
+_CLASS_WORDS = [("detect", 2004), ("finding", 2004), ("alert", 2004), ("auth", 3002), ("login", 3002),
+                ("dns", 4003), ("http", 4002), ("web", 4002), ("network", 4001), ("traffic", 4001)]
+_SEV_WORDS = {"info": 1, "low": 2, "medium": 3, "high": 4, "critical": 5, "fatal": 6}
+
+
+def _coerce(field: str, value):
+    """Normalize small-model sloppiness ('log.detection.finding', '.4', 'high') into typed values."""
+    s = str(value).strip().lower()
+    if field == "class_uid" and not s.isdigit():
+        return next((c for w, c in _CLASS_WORDS if w in s), None)
+    if field == "severity_id" and not s.isdigit():
+        if s in _SEV_WORDS:
+            return _SEV_WORDS[s]
+    m = re.search(r"\d+", s)
+    return int(m.group()) if m else None
 _COLUMN = {"class_uid": "class_uid", "severity_id": "severity_id", "source": "source"}
 
 
@@ -27,12 +43,13 @@ def run_filter(store: EventStore, spec: dict, limit: int = 200) -> dict:
         if field == "injection":
             col, value, op = "injection", 1 if str(value).lower() in ("1", "true", "yes") else 0, "eq"
         elif field in _NUMERIC:
-            try:
-                value = int(float(value))
-            except (TypeError, ValueError):
+            value = _coerce(field, value)
+            if value is None:
                 continue
-        if op == "in_cidr":
-            post.append((path, str(value)))
+            applied[-1]["value"] = value
+        if op in ("in_cidr", "not_in_cidr"):
+            cidrs = [c.strip() for c in str(value).split(",") if c.strip()]
+            post.append((path, cidrs, op == "not_in_cidr"))
             where.append(f"{col} IS NOT NULL")
             continue
         sql_op = {"eq": "=", "neq": "!=", "gt": ">", "lt": "<", "gte": ">=", "lte": "<="}.get(op)
@@ -56,6 +73,12 @@ def run_filter(store: EventStore, spec: dict, limit: int = 200) -> dict:
     rows = store.query(" AND ".join(where), tuple(params), limit=limit * (5 if post else 1))
     if post:
         from ..core.ocsf import get_path
-        rows = [r for r in rows if all(ip_in_cidr(str(get_path(r, p) or ""), c) for p, c in post)][:limit]
+        def keep(r):
+            for p, cidrs, negate in post:
+                inside = any(ip_in_cidr(str(get_path(r, p) or ""), c) for c in cidrs)
+                if inside == negate:
+                    return False
+            return True
+        rows = [r for r in rows if keep(r)][:limit]
     return {"filters": applied, "minutes": minutes, "count": len(rows), "events": rows,
             "ms": round((time.perf_counter() - t0) * 1000, 1)}

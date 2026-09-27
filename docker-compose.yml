@@ -1,0 +1,45 @@
+# docker compose up        -> UI + API on http://localhost:8000, syslog on udp/5514
+# Air-gapped site: pre-load the model volume (see README "Air-gapped install"), then
+#   docker compose up ekalog ollama      (skips the one-time model pull)
+services:
+  ekalog:
+    build: .
+    image: ekalog:1.0
+    ports:
+      - "8000:8000"
+      - "5514:5514/udp"
+    environment:
+      EKALOG_OLLAMA_URL: http://ollama:11434   # the only LLM endpoint EKALOG will talk to
+      EKALOG_MODEL: ${EKALOG_MODEL:-qwen2.5:7b-instruct-q4_K_M}
+      EKALOG_FALLBACK_MODEL: qwen2.5:3b-instruct-q4_K_M
+      EKALOG_WORKERS: ${EKALOG_WORKERS:-0}
+    volumes:
+      - ekalog-state:/app/state
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    # Uncomment for NVIDIA GPUs (optional; CPU works, just slower onboarding):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  # one-time model download (connected lab machine only)
+  ollama-pull:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "sleep 3 && ollama pull ${EKALOG_MODEL:-qwen2.5:7b-instruct-q4_K_M}"]
+    depends_on:
+      - ollama
+    restart: "no"
+
+volumes:
+  ekalog-state:
+  ollama-models:

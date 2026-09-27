@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+web/out
+**/.venv
+**/__pycache__
+**/*.pyc
+backend/state
+backend/data/uploads
+**/.pytest_cache
+.git
+*.ekapack
+*.parquet

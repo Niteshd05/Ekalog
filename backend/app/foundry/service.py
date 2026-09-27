@@ -24,10 +24,10 @@ from .columns import header_from_sample
 from .labeler import coverage_report, decide_semantics, label_all
 from .llm import llm
 from .miner import EkaMiner
-from .prompts import SYSTEM_LABEL, label_request, merge_llm
+from .prompts import ASK_SLOTS, SYSTEM_LABEL, label_request, merge_llm
 
 Emit = Callable[[dict], Awaitable[None]]
-PROMPT_VERSION = "label-v2"
+PROMPT_VERSION = "label-v3"  # bump whenever prompt or cache format changes
 _SLUG = re.compile(r"[^a-z0-9]+")
 
 
@@ -85,13 +85,17 @@ class Foundry:
         for t in templates:
             cached = self.registry.cache_get(f"{PROMPT_VERSION}:{stats['model']}:{t.tid}")
             if cached:
-                for pos, (name, path, by) in cached["slots"].items():
+                # the cache holds only the model's own answers; rules (which may have improved since) win
+                for pos, (name, path) in cached["slots"].items():
                     s = t.slots.get(int(pos))
-                    if s:
-                        s.name, s.ocsf, s.labeled_by = name, path, by
-                t.class_uid = cached["class_uid"]
-                if cached.get("class_by"):
-                    t.fixed["class_by"] = cached["class_by"]
+                    if s and s.labeled_by in ASK_SLOTS:
+                        s.name, s.ocsf, s.labeled_by = name, path, "llm"
+                    elif s and s.labeled_by in ("rule-key", "rule-schema") and s.ocsf is None and path:
+                        s.ocsf, s.labeled_by = path, "llm"  # the device's own key name is kept
+                if cached.get("class_uid") is not None:
+                    t.class_uid = cached["class_uid"]
+                    t.fixed["class_by"] = "llm"
+                decide_semantics(t)
                 stats["cache_hits"] += 1
             else:
                 pending.append(t)
@@ -138,8 +142,8 @@ class Foundry:
             for t in tags.values():
                 decide_semantics(t)
                 self.registry.cache_put(f"{PROMPT_VERSION}:{stats['model']}:{t.tid}", {
-                    "slots": {str(p): [s.name, s.ocsf, s.labeled_by] for p, s in t.slots.items()},
-                    "class_uid": t.class_uid, "class_by": t.fixed.get("class_by")})
+                    "slots": {str(p): [s.name, s.ocsf] for p, s in t.slots.items() if s.labeled_by == "llm"},
+                    "class_uid": t.class_uid if t.fixed.get("class_by") == "llm" else None})
         stats["seconds"] = round(time.time() - t0, 2)
         return stats
 
@@ -302,7 +306,11 @@ class Foundry:
         await self._stage(job, "mined", templates=len(new), lines=len(lines),
                           preview=[{"tid": t.tid, "count": t.count, "display": t.display()[:220]} for t in new[:8]])
         if not new:
-            return None, {}
+            # the alarm had no new line shapes (e.g. a transient burst): close the job, nothing to heal
+            job.result = {"parser_id": pid, "from": old.version, "version": old.version, "no_change": True}
+            job.finished = time.time()
+            await self._stage(job, "done", **job.result, elapsed=round(job.finished - job.started, 2))
+            return None, {"no_change": True}
         label_all(new)
         llm_stats = await self._label_with_llm(job, new)
         for t in new:

@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/* ---------- EKALOG design tokens: Liquid Glass, dark, cinematic ---------- */
+@theme {
+  --color-bg-0: #05070d;
+  --color-bg-1: #0a0e1a;
+  --color-bg-2: #111827;
+  --color-ink: #e8edf7;
+  --color-muted: #8fa0bf;
+  --color-faint: #5b6a88;
+  --color-cyan: #22d3ee;
+  --color-violet: #8b5cf6;
+  --color-mint: #34d399;
+  --color-amber: #fbbf24;
+  --color-rose: #fb7185;
+  --font-display: var(--font-space), ui-sans-serif, system-ui;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui;
+  --font-mono: var(--font-jet), ui-monospace, "Cascadia Code", monospace;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+}
+
+:root {
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-hi: rgba(255, 255, 255, 0.14);
+  --stroke: rgba(255, 255, 255, 0.1);
+  --shadow-glass: 0 20px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-bg-0);
+  color: var(--color-ink);
+}
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+::selection {
+  background: rgba(34, 211, 238, 0.3);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+@layer components {
+  .glass {
+    position: relative;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-glass);
+  }
+  /* specular 1px conic ring that brightens on hover */
+  .specular::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--spec-angle, 140deg), transparent 0deg, rgba(34, 211, 238, 0.35) 60deg,
+        transparent 120deg, rgba(139, 92, 246, 0.35) 220deg, transparent 300deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.35;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .specular:hover::before {
+    opacity: 1;
+  }
+  /* slow highlight gliding along the top edge */
+  .specular::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 10%;
+    width: 30%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: glide 9s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.75rem;
+    border: 1px solid var(--stroke);
+    background: rgba(255, 255, 255, 0.04);
+    white-space: nowrap;
+  }
+  .kbd {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--stroke);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--color-muted);
+  }
+  .field {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--stroke);
+    border-radius: 14px;
+    padding: 0.65rem 0.9rem;
+    color: var(--color-ink);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .field:focus {
+    border-color: rgba(34, 211, 238, 0.6);
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.12);
+  }
+  .mono-block {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--stroke);
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .text-grad {
+    background: linear-gradient(100deg, #e8edf7 10%, #22d3ee 45%, #8b5cf6 80%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@keyframes glide {
+  0%, 100% { transform: translateX(0); opacity: 0.2; }
+  50% { transform: translateX(200%); opacity: 0.9; }
+}
+@keyframes aurora {
+  0% { transform: translate3d(-8%, -6%, 0) rotate(0deg) scale(1); }
+  50% { transform: translate3d(6%, 4%, 0) rotate(12deg) scale(1.15); }
+  100% { transform: translate3d(-8%, -6%, 0) rotate(0deg) scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 currentColor; }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

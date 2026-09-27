@@ -64,7 +64,7 @@ def fingerprint(t: Template) -> dict:
                 return {"vendor": "", "product": "", "format": "cef"}
             return {"vendor": vendor, "product": product, "format": fmt}
     if t.examples and _ZEEK_CONN.match(t.examples[0]):
-        return {"vendor": "Zeek", "product": "Zeek conn.log", "format": "tsv"}
+        return {"vendor": "Zeek", "product": "conn.log", "format": "tsv"}
     if t.examples and t.examples[0].lstrip().startswith("{"):
         return {"vendor": "", "product": "", "format": "json"}
     if "\t" in "".join(t.delims):
@@ -244,22 +244,29 @@ def decide_semantics(t: Template) -> None:
     paths = {s.ocsf for s in t.slots.values() if s.ocsf}
     lits = [w.lower() for w in t.words if w]
     litset = set(lits)
-    if t.class_uid == 0 or t.fixed.get("class_by") != "llm":
-        if "finding_info.title" in paths:
-            cls = 2004
-        elif "query.hostname" in paths:
-            cls = 4003
-        elif any(p.startswith("http_request") for p in paths):
-            cls = 4002
-        elif "user.name" in paths and litset & {"authentication", "login", "logon", "vpn", "tunnel", "ssl", "aaa", "assigned"}:
-            cls = 3002
-        elif "src_endpoint.ip" in paths and "dst_endpoint.ip" in paths:
-            cls = 4001
-        elif "user.name" in paths:
-            cls = 3002
-        else:
-            cls = 0
-        t.class_uid = cls
+    if "finding_info.title" in paths:
+        rule_cls = 2004
+    elif "query.hostname" in paths:
+        rule_cls = 4003
+    elif any(p.startswith("http_request") for p in paths):
+        rule_cls = 4002
+    elif "user.name" in paths and litset & {"authentication", "login", "logon", "vpn", "tunnel", "ssl", "aaa", "assigned"}:
+        rule_cls = 3002
+    elif "src_endpoint.ip" in paths and "dst_endpoint.ip" in paths:
+        rule_cls = 4001
+    elif "user.name" in paths:
+        rule_cls = 3002
+    else:
+        rule_cls = 0
+    # The model's class wins only if it is specific (not Base Event) and its required fields are mapped;
+    # otherwise the evidence-based rule class stands.
+    llm_cls = t.class_uid if t.fixed.get("class_by") == "llm" else None
+    required = ocsf.CLASSES.get(llm_cls, {}).get("required", []) if llm_cls else []
+    if llm_cls and all(r in paths for r in required):
+        t.class_uid = llm_cls
+    else:
+        t.class_uid = rule_cls
+        t.fixed.pop("class_by", None)
     fixed = {k: v for k, v in t.fixed.items() if k == "class_by"}
     for w in lits:
         if w in ocsf.ACTION_MAP and "action" not in paths and "disposition" not in paths:

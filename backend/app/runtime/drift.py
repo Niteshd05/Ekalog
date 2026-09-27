@@ -46,8 +46,13 @@ class DriftSentinel:
     def observe(self, source: str, parser: str | None, results: list[bool], shapes: list[tuple]) -> dict | None:
         """results: True = parse failure. Returns an alarm dict when drift is detected."""
         h = self.get(source)
-        if parser:
+        if parser and parser != h.parser:
+            # newly bound (or re-bound) source: failures from before the parser existed are not drift
             h.parser = parser
+            h.window.clear()
+            h.shapes.clear()
+            if h.status in ("unknown", "drifting", "learning"):
+                h.status = "learning"
         for r in results:
             h.window.append(1 if r else 0)
         h.total += len(results)
@@ -74,6 +79,8 @@ class DriftSentinel:
                 return alarm
         elif h.status in ("learning", "healed") and len(h.window) >= settings.drift_min_events:
             h.status = "stable"
+        elif h.status == "drifting" and len(h.window) >= settings.drift_min_events and rate < settings.drift_fail_rate / 2:
+            h.status = "stable"  # recovered (e.g. rolled back or the device reverted)
         return None
 
     def tick(self):

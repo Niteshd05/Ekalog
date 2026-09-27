@@ -108,7 +108,7 @@ class Pipeline:
         self.registry.absorb_router_bindings(router)
         await asyncio.to_thread(self._persist, items, events, replay_rows is not None)
         dt = time.perf_counter() - t0
-        self.lat_us.append(dt * 1e6 / max(1, len(items)))
+        self.lat_us.append(dt * 1e6)  # end-to-end batch time: vault + normalize + verify + store + sinks
         for k in ("matched", "unmatched", "verified", "verify_failed"):
             self.totals[k] += st[k]
         self.totals["events"] += len(events)
@@ -175,6 +175,13 @@ class Pipeline:
                                                               "quarantined": len(rows)}})
             job = self.foundry.new_job(source, f"quarantine:{source}", kind="heal")
             art, diff = await self.foundry.heal(job, pid, [r[1] for r in rows])
+            if art is None and diff.get("no_change"):
+                # transient: quarantined lines already match the active parser -> just replay them
+                replayed = await self.replay_quarantine(source)
+                self.drift.mark(source, "healed")
+                await self.hub.emit({"type": "drift", "payload": {"source": source, "parser": pid, "state": "cleared",
+                                                                  "replayed": replayed, "job_id": job.id}})
+                return
             if art is None:
                 self.drift.mark(source, "drifting")
                 await self.hub.emit({"type": "drift", "payload": {"source": source, "parser": pid, "state": "failed",
@@ -214,7 +221,7 @@ class Pipeline:
         loss = 1.0 if t["verified"] + t["verify_failed"] == 0 else t["verified"] / (t["verified"] + t["verify_failed"])
         return {
             **t, "eps": round(self.eps(), 1), "queue": self.queue.qsize(), "uptime": round(time.time() - self.started),
-            "lossless_score": loss, "p50_us": p(0.5), "p99_us": p(0.99),
+            "lossless_score": loss, "batch_p50_ms": round(p(0.5) / 1000, 2), "batch_p99_ms": round(p(0.99) / 1000, 2),
             "parsers": len(self.registry.active), "sources": {s: h.to_dict() for s, h in self.drift.sources.items()},
             "healing": sorted(self.healing), "workers": settings.workers,
         }

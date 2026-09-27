@@ -71,4 +71,5 @@ def _slim(e: dict) -> dict:
         "status": ek.get("status"), "verified": ek.get("lossless", {}).get("verified"),
         "injection": ek.get("injection", {}).get("detected", False),
         "title": (e.get("finding_info") or {}).get("title"),
+        "user": (e.get("user") or {}).get("name"),
     }

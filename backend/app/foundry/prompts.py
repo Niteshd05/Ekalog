@@ -19,7 +19,7 @@ from ..runtime.injection import scan
 
 _LIT_OK = re.compile(r"[A-Za-z0-9_.%&@#+\-]{1,40}")
 _EX_CLEAN = re.compile(r"[^A-Za-z0-9._-]")
-_ASK_SLOTS = {"none", "rule-ctx", "rule-order"}
+ASK_SLOTS = {"none", "rule-ctx", "rule-order"}
 _KEYED = {"rule-key", "rule-schema"}
 _TYPED = {"ipv4", "ipv6", "int", "float", "epoch", "ts", "mac", "hex"}  # regex-validated: cannot carry text
 
@@ -62,7 +62,7 @@ def llm_view(t: Template, tag: str) -> tuple[str, list[str]] | None:
     rows = []
     for p in sorted(t.slots):
         s = t.slots[p]
-        need = s.labeled_by in _ASK_SLOTS or (s.labeled_by in _KEYED and s.ocsf is None)
+        need = s.labeled_by in ASK_SLOTS or (s.labeled_by in _KEYED and s.ocsf is None)
         if not need:
             rows.append(f"  {tag}.s{p} = {s.name} -> {s.ocsf or 'none'} (fixed)")
             continue
@@ -135,7 +135,7 @@ def merge_llm(result: dict, tags: dict[str, Template]) -> dict:
         t = tags.get(entry.get("id"))
         if t is None:
             continue
-        used = {s.ocsf for s in t.slots.values() if s.ocsf and s.ocsf != "time" and s.labeled_by not in _ASK_SLOTS}
+        used = {s.ocsf for s in t.slots.values() if s.ocsf and s.ocsf != "time" and s.labeled_by not in ASK_SLOTS}
         names = {s.name for s in t.slots.values()}
         for item in entry.get("slots", []) or []:
             sid = str(item.get("slot", ""))
@@ -161,7 +161,7 @@ def merge_llm(result: dict, tags: dict[str, Template]) -> dict:
                     names.discard(s.name)
                     s.name = nm
                     names.add(nm)
-            if path or s.labeled_by in _ASK_SLOTS:
+            if path or s.labeled_by in ASK_SLOTS:
                 s.ocsf = path
                 s.labeled_by = "llm"
             if path and path != "time":
@@ -187,14 +187,27 @@ ASK_FIELDS = {
     "bytes_out": "traffic.bytes_out", "bytes_in": "traffic.bytes_in", "source": "ekalog.source",
     "injection": "ekalog.injection.detected", "status": "ekalog.status",
 }
-ASK_OPS = ["eq", "neq", "contains", "gt", "lt", "gte", "lte", "in_cidr", "starts_with"]
+ASK_OPS = ["eq", "neq", "contains", "gt", "lt", "gte", "lte", "in_cidr", "not_in_cidr", "starts_with"]
 
 SYSTEM_ASK = (
     "You translate an analyst's question into a structured filter over normalized OCSF security events. "
-    "You never see event data. Use only the allowed field names and operators. severity_id: 1 info, 2 low, "
-    "3 medium, 4 high, 5 critical. class_uid: 4001 network, 2004 detection finding, 3002 authentication, "
-    "4002 http, 4003 dns. disposition is 'Allowed' or 'Blocked'. Private networks are in_cidr 10.0.0.0/8, "
-    "172.16.0.0/12, 192.168.0.0/16. Reply with JSON only."
+    "You never see event data. Use only the allowed field names and operators.\n"
+    "Rules: add ONLY constraints the question states - never invent ports, protocols or extra conditions. "
+    "minutes = 0 unless the question names a time window. Use ports for services "
+    "(ssh 22, rdp 3389, http 80, https 443, dns 53, smb 445, telnet 23).\n"
+    "Values: severity_id 1 info, 2 low, 3 medium, 4 high, 5 critical. class_uid 4001 network, 2004 detection "
+    "finding, 3002 authentication, 4002 http, 4003 dns. disposition is 'Allowed' or 'Blocked'. "
+    "'outside/external/internet' source = src_ip not_in_cidr '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'; "
+    "'internal' = in_cidr with the same list. Country names in English.\n"
+    "Examples:\n"
+    "Q: blocked connections from outside to SSH -> [disposition eq Blocked; dst_port eq 22; "
+    "src_ip not_in_cidr 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16], minutes 0\n"
+    "Q: high or critical detections -> [class_uid eq 2004; severity_id gte 4], minutes 0\n"
+    "Q: denied RDP in the last 30 minutes -> [disposition eq Blocked; dst_port eq 3389], minutes 30\n"
+    "Q: traffic to Germany -> [country eq Germany], minutes 0\n"
+    "Q: prompt injection attempts -> [injection eq true], minutes 0\n"
+    "Q: everything from 185.220.101.4 -> [src_ip eq 185.220.101.4], minutes 0\n"
+    "Reply with JSON only."
 )
 
 

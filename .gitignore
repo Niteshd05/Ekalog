@@ -8,3 +8,6 @@ web/out/
 *.ekapack
 *.parquet
 .pytest_cache/
+backend/data/uploads/
+web/next-env.d.ts
+*.tsbuildinfo
