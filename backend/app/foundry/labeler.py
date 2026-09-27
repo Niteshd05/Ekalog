@@ -22,6 +22,9 @@ _ASA_LEVEL = re.compile(r"%[A-Z]+-(\d)-\d+")
 _CEF_HEADER = ["cef_version", "device_vendor", "device_product", "device_version", "signature_id", "event_name", "cef_severity"]
 _SRC_WORDS = {"src", "source", "from", "orig", "client", "sender"}
 _DST_WORDS = {"dst", "dest", "destination", "to", "resp", "server", "target"}
+# interface-qualified addresses ("inside:10.1.2.3"): internal side initiates unless the message says inbound
+_INTERNAL_IFACES = {"inside", "lan", "internal", "trust", "trusted", "private", "management", "mgmt"}
+_IFACES = _INTERNAL_IFACES | {"outside", "wan", "external", "untrust", "untrusted", "public", "internet", "dmz"}
 
 # vendor fingerprints: (predicate on literal text, vendor, product, format)
 _FINGERPRINTS = [
@@ -158,7 +161,28 @@ def label_template(t: Template, colnames: dict[int, str] | None = None) -> None:
             ip = t.slots[p - 1]
             side = "src" if (ip.ocsf or "").startswith("src") else "dst" if (ip.ocsf or "").startswith("dst") else None
             path = f"{side}_endpoint.port" if side else None
-            assign(s, (ip.name or "ip") + "_port", path, "rule-ctx")
+            by = "rule-iface" if ip.labeled_by == "rule-iface" else "rule-ctx"
+            assign(s, (ip.name or "ip") + "_port", path, by)
+            continue
+        if s.type in ("ipv4", "ipv6") and p >= 1 and delims[p - 1] == "(":
+            assign(s, "mapped_ip", None, "rule-iface")  # NAT-mapped copy, e.g. ASA "(203.0.113.5/443)"
+            continue
+        iface = words[p - 1] if s.type in ("ipv4", "ipv6") and p >= 1 and delims[p - 1] == ":" else None
+        if iface and iface.lower() in _IFACES:
+            side = None
+            for w in reversed(words[max(0, p - 5):p - 1]):  # nearest explicit keyword wins
+                lw = (w or "").lower()
+                if lw in ("src", "source"):
+                    side = "src"
+                    break
+                if lw in ("dst", "dest", "destination"):
+                    side = "dst"
+                    break
+            if side is None:
+                internal = iface.lower() in _INTERNAL_IFACES
+                inbound = "inbound" in {w.lower() for w in words if w}
+                side = "src" if internal != inbound else "dst"
+            assign(s, f"{iface.lower()}_ip", f"{side}_endpoint.ip", "rule-iface")
             continue
         if s.type in ("ipv4", "ipv6"):
             ctx = []
@@ -192,8 +216,31 @@ def label_template(t: Template, colnames: dict[int, str] | None = None) -> None:
     decide_semantics(t)
 
 
+_PRIORITY = {"rule-schema": 0, "rule-key": 0, "rule-pos": 1, "rule-iface": 1, "llm": 2, "rule-ctx": 3, "rule-order": 4, "none": 5}
+
+
+def enforce_unique_paths(t: Template) -> None:
+    """Invariant required for losslessness: each OCSF path (except split 'time') is fed by one slot.
+    On conflict the strongest evidence wins; losers keep their name and land in `unmapped`."""
+    owner: dict[str, object] = {}
+    for p in sorted(t.slots):
+        s = t.slots[p]
+        if not s.ocsf or s.ocsf == "time":
+            continue
+        cur = owner.get(s.ocsf)
+        if cur is None:
+            owner[s.ocsf] = s
+        elif _PRIORITY.get(s.labeled_by, 5) < _PRIORITY.get(cur.labeled_by, 5):
+            cur.ocsf = None
+            owner[s.ocsf] = s
+        else:
+            s.ocsf = None
+
+
 def decide_semantics(t: Template) -> None:
     """Class, fixed activity/disposition and severity from mapped paths + literal words."""
+    enforce_unique_paths(t)
+    t._plan = None
     paths = {s.ocsf for s in t.slots.values() if s.ocsf}
     lits = [w.lower() for w in t.words if w]
     litset = set(lits)

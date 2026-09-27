@@ -72,3 +72,19 @@ def test_non_utf8_bytes_round_trip():
     events, st = normalize_batch([it], Router({art.id: art}, {"s": art.id}))
     assert st["verified"] == 1
     assert sha256_hex(line, enc) == __import__("hashlib").sha256(raw).hexdigest()
+
+
+def test_duplicate_ocsf_paths_are_resolved():
+    """Two slots claiming one OCSF path would overwrite each other and break the round-trip."""
+    from app.foundry.labeler import decide_semantics
+    lines = [f"conn from {i}.1.1.1 to 10.0.0.{i} x" for i in range(1, 40)]
+    art = _artifact(lines)
+    t = art.templates[0]
+    ips = [s for s in t.slots.values() if s.type == "ipv4"]
+    ips[0].ocsf, ips[0].labeled_by = "dst_endpoint.ip", "llm"
+    ips[1].ocsf, ips[1].labeled_by = "dst_endpoint.ip", "rule-ctx"
+    decide_semantics(t)
+    assert [s.ocsf for s in ips].count("dst_endpoint.ip") == 1
+    items = [Item(ln, "s", "utf-8", sha256_hex(ln), "r", 0) for ln in lines]
+    _, st = normalize_batch(items, Router({art.id: art}, {"s": art.id}))
+    assert st["verify_failed"] == 0

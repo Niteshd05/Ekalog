@@ -12,7 +12,7 @@ from pathlib import Path
 import orjson
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .config import settings
@@ -105,7 +105,7 @@ async def _ticker():
         S.drift.tick()
 
 
-app = FastAPI(title="EKALOG", version="1.0.0", default_response_class=ORJSONResponse, lifespan=lifespan)
+app = FastAPI(title="EKALOG", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 

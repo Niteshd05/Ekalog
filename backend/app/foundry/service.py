@@ -138,7 +138,7 @@ class Foundry:
             for t in tags.values():
                 decide_semantics(t)
                 self.registry.cache_put(f"{PROMPT_VERSION}:{stats['model']}:{t.tid}", {
-                    "slots": {p: [s.name, s.ocsf, s.labeled_by] for p, s in t.slots.items()},
+                    "slots": {str(p): [s.name, s.ocsf, s.labeled_by] for p, s in t.slots.items()},
                     "class_uid": t.class_uid, "class_by": t.fixed.get("class_by")})
         stats["seconds"] = round(time.time() - t0, 2)
         return stats
@@ -174,6 +174,12 @@ class Foundry:
                     bad += 1
         gates.append({"id": "types", "label": "Type checks (IPs, ports, timestamps)", "ok": bad == 0,
                       "detail": f"{bad} invalid values"})
+        # semantic sanity: a mislabeled NAT copy or duplicate host shows up as src == dst
+        both = [(ocsf.get_path(e, "src_endpoint.ip"), ocsf.get_path(e, "dst_endpoint.ip")) for e in events]
+        both = [(a, b) for a, b in both if a and b]
+        same = sum(1 for a, b in both if a == b) / max(1, len(both))
+        gates.append({"id": "semantics", "label": "Semantic sanity (source differs from destination)",
+                      "ok": same <= 0.2, "detail": f"{same * 100:.0f}% of events have src == dst"})
         missing = []
         for t in art.templates:
             req = ocsf.CLASSES.get(t.class_uid, {}).get("required", [])
