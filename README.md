@@ -116,11 +116,3 @@ web/                  Next.js 15 UI (static export), React Three Fiber hero, Fra
 docs/                 build spec (v2 revision in §0.5)
 ```
 
-## Honest limitations
-- Free text with a variable number of *unquoted* words in non-CSV logs produces one template per word count;
-  quoted fields, CSV columns and JSON strings are handled as single slots.
-- The 7B model occasionally mislabels a rarely used field (e.g. FortiGate `trandisp`). Those labels are visible
-  as "Local AI" in the UI and can be corrected by re-onboarding. Byte-level losslessness is never affected.
-- The throughput numbers are single-process Python; the Rust reimplementation of the hot path is future work.
-
-Planned license: Apache-2.0 (add a `LICENSE` file before publishing the repository).
